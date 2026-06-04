@@ -250,11 +250,18 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     await page.waitForTimeout(400);
     mark('typed-location');
     await page.waitForTimeout(2200);
-    const opt = page.locator('li[data-testid^="pickup-location-option-"]').first();
-    if (await opt.count().catch(() => 0)) await opt.click();
-    else { await dumpDebug(page, `noopt_${tag}`); throw new Error('location-option-not-found'); }
+    // A city query (e.g. "Muskogee, OK") lists every Avis branch in that area.
+    // Capture how many there are and the exact text of the one we pick, so the
+    // alert names the specific branch (name + address) — not just the city.
+    const opts = page.locator('li[data-testid^="pickup-location-option-"]');
+    const branchCount = await opts.count().catch(() => 0);
+    if (!branchCount) { await dumpDebug(page, `noopt_${tag}`); throw new Error('location-option-not-found'); }
+    const opt = opts.first();
+    let resolvedLocation = ((await opt.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim();
+    await opt.click();
+    if (branchCount > 1) warnings.push(`branches-${branchCount}`);
     await page.waitForTimeout(1500);
-    mark('picked-location');
+    mark(`picked-location (${branchCount} branch option${branchCount === 1 ? '' : 's'})`);
 
     // 2) AARP/AWD discount (best-effort — alert still useful without it, but flag)
     if (awdCode) {
@@ -328,16 +335,20 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     let url = page.url();
     if (!/reservation|vehicle|select/i.test(url)) url = 'https://www.avis.com/en/offers/partners/aarp-members-save-30';
 
+    const taxesFeesUSD = veh.baseUSD != null ? Math.max(0, veh.allInUSD - veh.baseUSD) : null;
     return {
       ok: true,
-      priceUSD: veh.priceUSD, // all-in total (taxes + fees)
+      priceUSD: veh.priceUSD, // all-in total (base − AWD + taxes + fees)
       allInUSD: veh.allInUSD,
-      baseUSD: veh.baseUSD,
+      baseUSD: veh.baseUSD, // already AWD-discounted, pre-tax
+      taxesFeesUSD,
+      resolvedLocation: resolvedLocation || location.name,
+      branchCount,
       carClass: `${veh.vehicle} (${veh.sipp}, ${veh.payType})`,
       currency: 'USD',
       url,
       warnings,
-      detail: `${location.name} · ${fmt(pickup)}..${fmt(ret)} · ${rentalDays}d${awdCode && !warnings.includes('awd-not-applied') ? ' · AARP' : ''}`,
+      detail: `${resolvedLocation || location.name} · ${fmt(pickup)}..${fmt(ret)} · ${rentalDays}d${awdCode && !warnings.includes('awd-not-applied') ? ' · AARP' : ''}`,
     };
   } catch (err) {
     await dumpDebug(page, `error_${tag}`);

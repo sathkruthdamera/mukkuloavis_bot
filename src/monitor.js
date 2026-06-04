@@ -45,7 +45,7 @@ export async function runCheck({ now = new Date() } = {}) {
           pickup: w.pickup,
           ret: w.ret,
           awdCode: cfg.awdCode,
-          rentalDays: cfg.rentalDays,
+          rentalDays: w.days || cfg.rentalDays, // actual calendar-month length
         });
       } catch (e) {
         q = { ok: false, error: String(e.message || e) };
@@ -84,6 +84,7 @@ export async function runCheck({ now = new Date() } = {}) {
     if (!prev || r.priceUSD < prev.priceUSD) {
       state.dailyLows.byCode[r.code] = {
         priceUSD: r.priceUSD, allInUSD: r.allInUSD, baseUSD: r.baseUSD,
+        taxesFeesUSD: r.taxesFeesUSD, resolvedLocation: r.resolvedLocation, branchCount: r.branchCount,
         name: r.name, distance: r.distance, carClass: r.carClass,
         url: r.url, pickup: r.pickup, ret: r.ret, t: nowIso,
       };
@@ -101,12 +102,24 @@ export async function runCheck({ now = new Date() } = {}) {
   });
 
   for (const r of fresh) {
-    const base = r.baseUSD ? ` (base $${r.baseUSD} pre-tax)` : '';
-    const aarp = cfg.awdCode && !(r.warnings || []).includes('awd-not-applied') ? ' · AARP applied' : '';
-    const title = `🚗 Avis ${r.code} $${r.priceUSD} all-in for ${cfg.rentalDays} days`;
+    const where = r.resolvedLocation || r.name; // the EXACT Avis branch, not the city
+    const awdApplied = cfg.awdCode && !(r.warnings || []).includes('awd-not-applied');
+    // Price breakdown: base (already AWD-discounted) + taxes & fees → all-in total.
+    const fees = r.taxesFeesUSD != null ? r.taxesFeesUSD : r.baseUSD != null ? Math.max(0, r.priceUSD - r.baseUSD) : null;
+    const breakdown =
+      r.baseUSD != null && fees != null
+        ? `Base $${r.baseUSD}${awdApplied ? ' (AARP-discounted)' : ''} + taxes & fees $${fees} = $${r.priceUSD} all-in`
+        : `$${r.priceUSD} all-in incl. taxes & fees`;
+    const aarpLine = awdApplied
+      ? `✅ AARP AWD (${cfg.awdLabel || 'AARP'}) applied${r.awdSavingsUSD ? ` — saved ~$${r.awdSavingsUSD}` : ''}`
+      : `⚠️ AARP AWD NOT applied — apply code ${cfg.awdCode || '(set AWD_CODE)'} at checkout`;
+    const branchNote = r.branchCount > 1 ? ` (cheapest of ${r.branchCount} Avis branches near ${r.name})` : '';
+    const title = `🚗 ${where} — $${r.priceUSD} all-in for the month`;
     const message =
-      `${r.name} (${r.distance} mi from ${cfg.origin.name})\n` +
-      `$${r.priceUSD} all-in incl. taxes & fees${base} — under your $${cfg.budgetUSD} budget${aarp}\n` +
+      `${where}${branchNote}\n` +
+      `${r.distance} mi from ${cfg.origin.name}\n` +
+      `${breakdown} — under your $${cfg.budgetUSD} budget\n` +
+      `${aarpLine}\n` +
       `Pickup ${r.pickup} → return ${r.ret}\n` +
       `${r.carClass}`;
     const res = await notifier.send({ title, message, url: r.url });

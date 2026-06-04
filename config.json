@@ -7,7 +7,7 @@
   "origin": { "name": "Dallas, TX", "lat": 32.7767, "lon": -96.797 },
   "radiusMiles": 250,
   "locationTiers": { "nearCount": 8, "farEveryHours": 4 },
-  "startDateStrategy": { "leadDaysMin": 3, "candidates": 2, "stepDays": 7 },
+  "startDateStrategy": { "leadDaysMin": 3, "pickupDays": [8, 9, 10, 11] },
   "checkIntervalCron": "0 * * * *",
   "digestCron": "0 21 * * *",
   "provider": "mock",

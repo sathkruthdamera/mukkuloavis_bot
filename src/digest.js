@@ -25,11 +25,17 @@ export async function sendDigest() {
   const best = rows[0];
   const underBudget = rows.filter((r) => r.priceUSD <= cfg.budgetUSD).length;
 
-  const lines = top.map((r, i) => `${i + 1}. $${r.priceUSD} all-in — ${r.name} (${r.distance}mi) · ${r.pickup}`);
+  const lines = top.map((r, i) => {
+    const where = r.resolvedLocation || r.name;
+    const fees = r.taxesFeesUSD != null ? ` (incl. $${r.taxesFeesUSD} tax+fees)` : '';
+    return `${i + 1}. $${r.priceUSD} all-in${fees} — ${where} (${r.distance}mi) · ${r.pickup}`;
+  });
+  const bestWhere = best.resolvedLocation || best.name;
   const message =
-    `Lowest 30-day all-in prices seen today (${low.date}), ${rows.length} locations priced:\n\n` +
+    `Lowest monthly all-in prices seen today (${low.date}), ${rows.length} locations priced:\n\n` +
     lines.join('\n') +
-    `\n\nCheapest: $${best.priceUSD} all-in — ${best.name}` +
+    `\n\nCheapest: $${best.priceUSD} all-in — ${bestWhere}` +
+    (best.baseUSD != null && best.taxesFeesUSD != null ? `\nBase $${best.baseUSD} + taxes & fees $${best.taxesFeesUSD}` : '') +
     (best.carClass ? `\n${best.carClass}` : '') +
     (underBudget
       ? `\n✅ ${underBudget} under your $${cfg.budgetUSD} budget`
