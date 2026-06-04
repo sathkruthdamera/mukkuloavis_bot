@@ -65,10 +65,10 @@
   </div>
 
   <h2>Prices by location <span class="sub" id="t-note"></span></h2>
-  <table id="tbl"><thead><tr><th>Location</th><th>Distance</th><th>Best 30-day total</th><th>Pickup window</th><th>Status</th></tr></thead><tbody></tbody></table>
+  <table id="tbl"><thead><tr><th>Avis branch</th><th>Distance</th><th>All-in price (incl. tax &amp; fees)</th><th>Pickup window</th><th>Status</th></tr></thead><tbody></tbody></table>
 
   <h2>Recent alerts</h2>
-  <table id="alerts"><thead><tr><th>When</th><th>Location</th><th>Price</th><th>Sent</th></tr></thead><tbody></tbody></table>
+  <table id="alerts"><thead><tr><th>When</th><th>Location</th><th>All-in price</th><th>Sent</th></tr></thead><tbody></tbody></table>
 </main>
 <script>
 const $ = (s) => document.querySelector(s);
@@ -89,15 +89,27 @@ async function load() {
   const rows = (d.results || []).slice().sort((a,b)=>(a.priceUSD||1e9)-(b.priceUSD||1e9));
   const qual = rows.filter(r=>r.qualifies);
   $('#s-qual').textContent = qual.length;
-  if (rows[0] && rows[0].ok) { $('#s-best').textContent = '$' + rows[0].priceUSD; $('#s-best-loc').textContent = rows[0].name + ' · ' + rows[0].pickup; }
+  if (rows[0] && rows[0].ok) {
+    $('#s-best').textContent = '$' + rows[0].priceUSD + ' all-in';
+    $('#s-best-loc').textContent = (rows[0].resolvedLocation || rows[0].name) + ' · incl. tax & fees · ' + rows[0].pickup;
+  }
   $('#t-note').textContent = c.provider === 'mock' ? '(mock data — switch provider to "avis" for live prices)' : '';
 
+  // The all-in price = base − AWD + taxes & fees (what you actually pay).
+  const feesOf = (r) => r.taxesFeesUSD != null ? r.taxesFeesUSD : (r.baseUSD != null ? Math.max(0, r.priceUSD - r.baseUSD) : null);
   const tb = $('#tbl tbody'); tb.innerHTML = '';
   for (const r of rows) {
     const tr = document.createElement('tr');
     if (r.qualifies) tr.className = 'row-good';
-    tr.innerHTML = `<td>${r.name}</td><td>${r.distance} mi</td>
-      <td>${r.ok ? '$' + r.priceUSD : '<span class=no>n/a</span>'}</td>
+    const fees = feesOf(r);
+    const breakdown = r.ok && r.baseUSD != null && fees != null
+      ? `<div class="sub">base $${r.baseUSD} + tax & fees $${fees}</div>` : '';
+    const priceCell = r.ok
+      ? `<div class="big" style="font-size:16px">$${r.priceUSD} <span class="sub">all-in</span></div>${breakdown}`
+      : '<span class=no>n/a</span>';
+    tr.innerHTML = `<td>${r.resolvedLocation || r.name}${r.branchCount > 1 ? ` <span class="sub">(1 of ${r.branchCount} branches)</span>` : ''}</td>
+      <td>${r.distance} mi</td>
+      <td>${priceCell}</td>
       <td class="sub">${r.window || (r.error||'')}</td>
       <td>${r.qualifies ? '<span class=ok>✓ under budget</span>' : (r.ok ? '<span class=no>over</span>' : '<span class=no>—</span>')}</td>`;
     tb.appendChild(tr);
