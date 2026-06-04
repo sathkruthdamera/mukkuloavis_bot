@@ -1,0 +1,19 @@
+{
+  "name": "avis-watcher",
+  "version": "1.0.0",
+  "description": "Monitors Avis monthly (30-day) rental prices around Dallas with an AARP/AWD discount and alerts you (Pushover / iMessage / Telegram) when a deal drops under your budget.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node src/index.js --once",
+    "scrape:debug": "node src/providers/avis-playwright.js --debug"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.60.0"
+  }
+}

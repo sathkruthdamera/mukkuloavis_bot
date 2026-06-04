@@ -1,0 +1,16 @@
+{
+  "budgetUSD": 900,
+  "rentalDays": 30,
+  "awdCode": "",
+  "awdLabel": "AARP",
+  "currency": "USD",
+  "origin": { "name": "Dallas, TX", "lat": 32.7767, "lon": -96.797 },
+  "radiusMiles": 150,
+  "startDateStrategy": { "leadDaysMin": 3, "candidates": 2, "stepDays": 7 },
+  "checkIntervalCron": "0 * * * *",
+  "provider": "mock",
+  "playwright": { "headless": true, "navTimeoutMs": 45000, "proxyUrl": "", "jitterBetweenLocationsMs": [4000, 12000] },
+  "notifier": "telegram",
+  "alertCooldownHours": 24,
+  "webPort": 4100
+}

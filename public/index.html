@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Avis Watcher — Dallas</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --line:#30363d; --txt:#e6edf3; --mut:#8b949e; --good:#2ea043; --warn:#d29922; --accent:#d6242c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:20px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { font-size:19px; margin:0; }
+  .pill { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:13px; color:var(--mut); }
+  main { max-width:1000px; margin:0 auto; padding:24px; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 4px; font-size:13px; color:var(--mut); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .big { font-size:24px; font-weight:700; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); font-size:14px; }
+  th { color:var(--mut); font-weight:600; }
+  .ok { color:var(--good); font-weight:700; }
+  .no { color:var(--mut); }
+  .row-good { background:rgba(46,160,67,.08); }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:9px 16px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--txt); }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:18px 0; }
+  input,select { background:var(--bg); border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:8px 10px; font-size:14px; }
+  label { font-size:13px; color:var(--mut); display:flex; flex-direction:column; gap:4px; }
+  .sub { color:var(--mut); font-size:13px; }
+  h2 { font-size:16px; margin:26px 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <span style="font-size:22px">🚗</span>
+  <h1>Avis Watcher</h1>
+  <span class="pill" id="p-budget">budget —</span>
+  <span class="pill" id="p-radius">radius —</span>
+  <span class="pill" id="p-provider">provider —</span>
+  <span class="pill" id="p-notifier">notifier —</span>
+  <span class="pill" id="p-last">last run —</span>
+</header>
+<main>
+  <div class="grid">
+    <div class="card"><h3>Best deal now</h3><div class="big" id="s-best">—</div><div class="sub" id="s-best-loc"></div></div>
+    <div class="card"><h3>Under budget</h3><div class="big" id="s-qual">—</div><div class="sub">locations within range</div></div>
+    <div class="card"><h3>Locations watched</h3><div class="big" id="s-locs">—</div><div class="sub" id="s-radius"></div></div>
+    <div class="card"><h3>AARP / AWD</h3><div class="big" id="s-awd">—</div><div class="sub">discount code</div></div>
+  </div>
+
+  <div class="bar">
+    <button id="btn-check">Check now</button>
+    <button class="ghost" id="btn-test">Send test alert</button>
+    <label>Budget $<input id="f-budget" type="number" style="width:90px" /></label>
+    <label>Radius mi<input id="f-radius" type="number" style="width:80px" /></label>
+    <label>AWD code<input id="f-awd" placeholder="AARP AWD#" style="width:120px" /></label>
+    <label>Provider
+      <select id="f-provider"><option value="mock">mock (test)</option><option value="avis">avis (live)</option></select>
+    </label>
+    <label>Notifier
+      <select id="f-notifier"><option>telegram</option><option>pushover</option><option>imessage</option><option>console</option></select>
+    </label>
+    <button class="ghost" id="btn-save">Save settings</button>
+  </div>
+
+  <h2>Prices by location <span class="sub" id="t-note"></span></h2>
+  <table id="tbl"><thead><tr><th>Location</th><th>Distance</th><th>Best 30-day total</th><th>Pickup window</th><th>Status</th></tr></thead><tbody></tbody></table>
+
+  <h2>Recent alerts</h2>
+  <table id="alerts"><thead><tr><th>When</th><th>Location</th><th>Price</th><th>Sent</th></tr></thead><tbody></tbody></table>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+async function load() {
+  const d = await (await fetch('/api/status')).json();
+  const c = d.config;
+  $('#p-budget').textContent = '$' + c.budgetUSD + ' / ' + c.rentalDays + 'd';
+  $('#p-radius').textContent = c.radiusMiles + ' mi · ' + c.origin.name;
+  $('#p-provider').textContent = 'provider: ' + c.provider;
+  $('#p-notifier').textContent = 'alerts: ' + c.notifier;
+  $('#p-last').textContent = d.lastRun ? 'last run ' + new Date(d.lastRun).toLocaleString() : 'no run yet';
+  $('#s-locs').textContent = (d.locations || []).length;
+  $('#s-radius').textContent = c.radiusMiles + ' mi of ' + c.origin.name;
+  $('#s-awd').textContent = c.awdSet ? '✓ set' : '—';
+  $('#f-budget').value = c.budgetUSD; $('#f-radius').value = c.radiusMiles;
+  $('#f-provider').value = c.provider; $('#f-notifier').value = c.notifier;
+
+  const rows = (d.results || []).slice().sort((a,b)=>(a.priceUSD||1e9)-(b.priceUSD||1e9));
+  const qual = rows.filter(r=>r.qualifies);
+  $('#s-qual').textContent = qual.length;
+  if (rows[0] && rows[0].ok) { $('#s-best').textContent = '$' + rows[0].priceUSD; $('#s-best-loc').textContent = rows[0].name + ' · ' + rows[0].pickup; }
+  $('#t-note').textContent = c.provider === 'mock' ? '(mock data — switch provider to "avis" for live prices)' : '';
+
+  const tb = $('#tbl tbody'); tb.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    if (r.qualifies) tr.className = 'row-good';
+    tr.innerHTML = `<td>${r.name}</td><td>${r.distance} mi</td>
+      <td>${r.ok ? '$' + r.priceUSD : '<span class=no>n/a</span>'}</td>
+      <td class="sub">${r.window || (r.error||'')}</td>
+      <td>${r.qualifies ? '<span class=ok>✓ under budget</span>' : (r.ok ? '<span class=no>over</span>' : '<span class=no>—</span>')}</td>`;
+    tb.appendChild(tr);
+  }
+  const ab = $('#alerts tbody'); ab.innerHTML = '';
+  for (const a of d.alerts || []) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class=sub>${new Date(a.t).toLocaleString()}</td><td>${a.key}</td><td>$${a.price}</td><td>${a.sent?'<span class=ok>yes</span>':'<span class=no>'+(a.error||'no')+'</span>'}</td>`;
+    ab.appendChild(tr);
+  }
+}
+$('#btn-check').onclick = async (e) => { e.target.textContent='Checking…'; e.target.disabled=true; await fetch('/api/check',{method:'POST'}); await load(); e.target.textContent='Check now'; e.target.disabled=false; };
+$('#btn-test').onclick = async (e) => { const r = await (await fetch('/api/test-alert',{method:'POST'})).json(); alert(r.ok?'Test alert sent ✓':'Failed: '+(r.error||'')); };
+$('#btn-save').onclick = async () => {
+  await fetch('/api/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+    budgetUSD:Number($('#f-budget').value), radiusMiles:Number($('#f-radius').value),
+    awdCode:$('#f-awd').value||undefined, provider:$('#f-provider').value, notifier:$('#f-notifier').value })});
+  $('#f-awd').value=''; await load();
+};
+load();
+</script>
+</body>
+</html>
