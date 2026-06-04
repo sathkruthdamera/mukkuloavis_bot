@@ -171,14 +171,27 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
   const { chromium } = await pw();
   fs.mkdirSync(config.paths.data, { recursive: true });
   const statePath = path.join(config.paths.data, 'avis-state.json');
-  const browser = await chromium.launch({ headless: config.playwright?.headless !== false, args: launchArgs });
-  const ctx = await browser.newContext({
-    ...contextOptions,
-    ...proxyOption(),
-    ...(fs.existsSync(statePath) ? { storageState: statePath } : {}),
-  });
-  await applyStealth(ctx);
-  const page = await ctx.newPage();
+
+  // CDP-attach mode: connect to a REAL Chrome you launched (best free way past
+  // PerimeterX — real fingerprint, your residential IP, your warmed cookies, and
+  // no navigator.webdriver flag). Falls back to launching a stealth chromium.
+  const cdpUrl = process.env.CHROME_CDP_URL || config.playwright?.cdpUrl;
+  let browser, ctx, page;
+  const attached = !!cdpUrl;
+  if (attached) {
+    browser = await chromium.connectOverCDP(cdpUrl);
+    ctx = browser.contexts()[0] || (await browser.newContext());
+    page = await ctx.newPage(); // a new tab in your real Chrome (don't stealth-patch the shared context)
+  } else {
+    browser = await chromium.launch({ headless: config.playwright?.headless !== false, args: launchArgs });
+    ctx = await browser.newContext({
+      ...contextOptions,
+      ...proxyOption(),
+      ...(fs.existsSync(statePath) ? { storageState: statePath } : {}),
+    });
+    await applyStealth(ctx);
+    page = await ctx.newPage();
+  }
   page.setDefaultTimeout(config.playwright?.navTimeoutMs || 45000);
   const tag = `${location.code}_${fmt(pickup)}`;
   const warnings = [];
@@ -280,9 +293,15 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     await dumpDebug(page, `error_${tag}`);
     return { ok: false, error: String(err.message || err), warnings, detail: location.name };
   } finally {
-    await ctx.storageState({ path: statePath }).catch(() => {});
-    await ctx.close().catch(() => {});
-    await browser.close().catch(() => {});
+    if (attached) {
+      // Only close the tab we opened, then disconnect — leave your Chrome running.
+      await page.close().catch(() => {});
+      await browser.close().catch(() => {});
+    } else {
+      await ctx.storageState({ path: statePath }).catch(() => {});
+      await ctx.close().catch(() => {});
+      await browser.close().catch(() => {});
+    }
   }
 }
 

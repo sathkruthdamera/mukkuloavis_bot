@@ -98,6 +98,35 @@ every 6h). Don't hammer Avis — every 4–12h is plenty for weekly price swings
 
 ---
 
+## Real-Chrome agent (best free way past PerimeterX)
+
+Avis uses PerimeterX bot-detection that 403s automated/headless browsers on
+datacenter IPs. The free way around it is to drive your **own everyday Chrome**:
+real fingerprint, your home IP, your warmed cookies, no `navigator.webdriver`.
+
+1. **Set up** (Windows): copy `.env.example` to `.env`, then set:
+   ```
+   PROVIDER=avis
+   NOTIFIER=telegram
+   CHROME_CDP_URL=http://localhost:9222
+   TELEGRAM_BOT_TOKEN=...
+   TELEGRAM_CHAT_ID=...
+   AWD_CODE=A359824
+   ```
+2. **Launch real Chrome with the debug port** — double-click
+   `deploy\start-chrome-debug.bat`. It opens a dedicated Chrome on avis.com.
+   Browse around Avis once so it earns PerimeterX cookies. **Leave it open.**
+3. **Test one check** — double-click `deploy\run-agent.bat` (or
+   `node src/index.js --once --report`). You get a Telegram verdict: real prices
+   or still blocked.
+4. **Run hourly while your PC is on** — `npm start` (checks every hour via the
+   built-in schedule and nudges on a sub-$900 hit), or schedule `run-agent.bat`
+   hourly in Windows Task Scheduler.
+
+> Tradeoff: this needs a real browser + real connection, so it only runs while
+> your PC and that Chrome are open. For 24/7 coverage when your PC is off, keep
+> the free GitHub Actions reminder below as a fallback.
+
 ## Run it hourly for free with GitHub Actions
 
 A scheduled workflow (`.github/workflows/avis-watch.yml`) runs one check every hour
