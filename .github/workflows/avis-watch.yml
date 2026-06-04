@@ -1,58 +1,26 @@
-name: Avis Watcher
+name: Avis Hourly Check
 
-# Runs one price-check cycle every hour and pings Telegram on a qualifying deal.
+# Sends a Telegram nudge every hour with the AARP code, a rolling 30-day window,
+# and in-range pickup locations. (Avis/PerimeterX blocks automated price reads
+# from CI, so this hands you a 10-second human check instead.)
 on:
   schedule:
-    - cron: "0 * * * *" # top of every hour (UTC). GitHub may delay scheduled runs a few min.
-  workflow_dispatch: {} # lets you run it on-demand from the Actions tab
-
-concurrency:
-  group: avis-watch
-  cancel-in-progress: false
+    - cron: "0 * * * *" # top of every hour (UTC). GitHub may delay a few minutes.
+  workflow_dispatch: {} # run on-demand from the Actions tab
 
 jobs:
-  check:
+  notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      # ---- config (non-secret) ----
-      PROVIDER: avis
-      NOTIFIER: telegram
-      # ---- secrets (set these in repo Settings -> Secrets and variables -> Actions) ----
-      AWD_CODE: ${{ secrets.AWD_CODE }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      PROXY_URL: ${{ secrets.PROXY_URL }} # optional residential proxy (recommended on Actions)
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Install dependencies
-        run: npm ci || npm install
-
-      - name: Install Chromium for Playwright
-        run: npx playwright install --with-deps chromium
-
-      # Persist dedupe state + cookies across the ephemeral runners so you don't
-      # get re-alerted for the same deal every hour. Unique key per run, restored
-      # from the most recent prefix match.
-      - name: Restore state
-        uses: actions/cache/restore@v4
-        with:
-          path: data
-          key: avis-state-${{ github.run_id }}
-          restore-keys: |
-            avis-state-
-
-      - name: Run one price check
-        run: node src/index.js --once
-
-      - name: Save state
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: data
-          key: avis-state-${{ github.run_id }}
+      - name: Send hourly Telegram check
+        run: node notify.js
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          AWD_CODE: ${{ secrets.AWD_CODE }}
+          BUDGET_USD: "900"
