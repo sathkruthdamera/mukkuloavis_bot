@@ -58,8 +58,10 @@ async function closePopups(page) {
   // clicks — remove the overlay nodes outright so they can't cover the form.
   await page
     .evaluate(() => {
+      // [class~="bxc"] matches the BounceX container as a whole class token —
+      // narrower than [class*="bxc"], so it can't accidentally remove the widget.
       document
-        .querySelectorAll('[id^="bx-campaign"], [class*="bx-overlay"], #bx-overlay-1843691, [class*="bxc"]')
+        .querySelectorAll('[id^="bx-campaign"], [class*="bx-overlay"], [class~="bxc"], [class*="bx-base"]')
         .forEach((n) => n.remove());
     })
     .catch(() => {});
@@ -68,12 +70,18 @@ async function closePopups(page) {
 async function clickDay(page, date) {
   const want = dayLabel(date);
   for (let i = 0; i < 14; i++) {
-    const el = page.locator(`button.rdp-day_button[aria-label*="${want}"]`).first();
-    if ((await el.count().catch(() => 0)) && (await el.isVisible().catch(() => false)) && !(await el.isDisabled().catch(() => true))) {
-      await el.click();
-      return true;
+    // There can be duplicate (hero + sticky) calendars in the DOM — iterate all
+    // matches and click the first VISIBLE, enabled one (not just .first()).
+    const els = page.locator(`button.rdp-day_button[aria-label*="${want}"]`);
+    const n = await els.count().catch(() => 0);
+    for (let j = 0; j < n; j++) {
+      const el = els.nth(j);
+      if ((await el.isVisible().catch(() => false)) && !(await el.isDisabled().catch(() => true))) {
+        await el.click();
+        return true;
+      }
     }
-    const next = page.locator('.rdp-button_next').first();
+    const next = page.locator('.rdp-button_next:visible').first();
     if (await next.count().catch(() => 0)) {
       await next.click().catch(() => {});
       await page.waitForTimeout(450);
@@ -131,40 +139,35 @@ async function readPrices(page) {
   return out;
 }
 
-// Pull plausible 30-day totals out of the vehicles API JSON. We don't have a
-// confirmed schema (only ever got the 403), so walk the object generically and
-// collect numbers under price-like keys, bounded to a sane 30-day-total range.
-function parsePricesFromJson(text) {
-  const out = [];
-  const KEY = /(total|amount|price|payNow|payLater|grandTotal|estimatedTotal|rate)/i;
-  try {
-    const data = JSON.parse(text);
-    const walk = (node, keyHint) => {
-      if (node == null) return;
-      if (typeof node === 'number') {
-        if (KEY.test(keyHint || '') && node >= 200 && node <= 20000) out.push(node);
-        return;
+// Parse the vehicles API JSON: vehicles[].price[] holds the rate options.
+// grossSubtotal = base 30-day price, totalDiscounted = all-in (taxes/fees).
+// Returns the single cheapest vehicle/option, with name + all-in for the alert.
+const num = (x) => {
+  const n = parseFloat(x);
+  return Number.isFinite(n) ? n : null;
+};
+function parseVehicles(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return null; }
+  const vehicles = data.vehicles || [];
+  let best = null;
+  for (const v of vehicles) {
+    for (const p of v.price || []) {
+      const base = num(p.grossSubtotal) ?? num(p.netSubtotal) ?? num(p.total) ?? num(p.totalDiscounted);
+      if (base == null || base < 100 || base > 50000) continue;
+      const allIn = num(p.totalDiscounted) ?? num(p.total) ?? base;
+      if (!best || base < best.priceUSD) {
+        best = {
+          priceUSD: Math.round(base),
+          allInUSD: Math.round(allIn),
+          vehicle: v.description || v.makeName || v.vehicleCode || 'vehicle',
+          sipp: v.sippCode || '',
+          payType: /PAY_NOW/i.test(p.priceType || '') ? 'pay now' : 'pay later',
+        };
       }
-      if (typeof node === 'string') {
-        const m = node.match(/^\$?\s?([\d,]+(?:\.\d{2})?)$/);
-        if (m && KEY.test(keyHint || '')) {
-          const v = Number(m[1].replace(/,/g, ''));
-          if (v >= 200 && v <= 20000) out.push(v);
-        }
-        return;
-      }
-      if (Array.isArray(node)) { node.forEach((v) => walk(v, keyHint)); return; }
-      if (typeof node === 'object') for (const [k, v] of Object.entries(node)) walk(v, k);
-    };
-    walk(data, '');
-  } catch {
-    // not JSON — fall back to scanning for "$" amounts in a total-ish range
-    for (const m of text.matchAll(/\$\s?([\d,]+(?:\.\d{2})?)/g)) {
-      const v = Number(m[1].replace(/,/g, ''));
-      if (v >= 200 && v <= 20000) out.push(v);
     }
   }
-  return out;
+  return best;
 }
 
 export async function getQuote({ location, pickup, ret, awdCode, rentalDays, debugDump = false }) {
@@ -178,10 +181,15 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
   const cdpUrl = process.env.CHROME_CDP_URL || config.playwright?.cdpUrl;
   let browser, ctx, page;
   const attached = !!cdpUrl;
+  let reusedTab = false;
   if (attached) {
     browser = await chromium.connectOverCDP(cdpUrl);
     ctx = browser.contexts()[0] || (await browser.newContext());
-    page = await ctx.newPage(); // a new tab in your real Chrome (don't stealth-patch the shared context)
+    // Reuse the already-open, FOREGROUND, fully-hydrated avis.com tab rather
+    // than a new background tab (which Chrome throttles so the widget won't
+    // hydrate). This is the key to reliable real-browser automation.
+    const existing = ctx.pages().find((p) => /avis\.com/.test(p.url()));
+    if (existing) { page = existing; reusedTab = true; } else { page = await ctx.newPage(); }
   } else {
     browser = await chromium.launch({ headless: config.playwright?.headless !== false, args: launchArgs });
     ctx = await browser.newContext({
@@ -193,6 +201,26 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     page = await ctx.newPage();
   }
   page.setDefaultTimeout(config.playwright?.navTimeoutMs || 45000);
+  await page.bringToFront().catch(() => {});
+  // Force the tab to render as focused/visible even in the background, so Chrome
+  // doesn't throttle it and the React booking widget actually hydrates.
+  try {
+    const cdpSession = await page.context().newCDPSession(page);
+    await cdpSession.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    // Force a DESKTOP-width viewport so Avis renders the desktop booking widget
+    // (a narrow real-browser window otherwise serves the mobile layout, whose
+    // selectors differ). Independent of the actual window size.
+    if (attached) {
+      await cdpSession.send('Emulation.setDeviceMetricsOverride', {
+        width: 1400, height: 900, deviceScaleFactor: 1, mobile: false,
+      });
+    }
+  } catch {}
+  await page.addInitScript(() => {
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+    Object.defineProperty(document, 'hidden', { get: () => false });
+    document.hasFocus = () => true;
+  }).catch(() => {});
   const tag = `${location.code}_${fmt(pickup)}`;
   const warnings = [];
   try {
@@ -202,18 +230,31 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     page.on('crash', () => DBG && console.error('  !! page CRASH event'));
     mark('goto');
     await page.goto(HOME, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3000);
+    // Wait for the React booking widget to actually hydrate (not just DOM ready).
+    await page.locator('[data-testid="pick-up-location-field-input"]').first()
+      .waitFor({ state: 'attached', timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(2500);
     await closePopups(page);
     await humanWander(page);
     mark('home-ready');
 
-    // 1) pickup location (re-nuke any late popup, force past any overlay)
+    // 1) pickup location — retry through hydration races (the React widget can
+    // remount on first paint). Each try: clear popups, wait for visible, click.
     const loc = page.locator('[data-testid="pick-up-location-field-input"]').first();
-    await loc.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
-    await closePopups(page);
-    if (!(await loc.count().catch(() => 0))) throw new Error('pickup-input-not-found');
-    await loc.click({ force: true }).catch(() => {});
-    for (const ch of location.query) await loc.type(ch, { delay: 90 });
+    let typed = false;
+    for (let attempt = 0; attempt < 4 && !typed; attempt++) {
+      try {
+        await closePopups(page);
+        await loc.waitFor({ state: 'visible', timeout: 15000 });
+        await loc.click({ timeout: 8000 });
+        await loc.fill('');
+        for (const ch of location.query) await loc.type(ch, { delay: 90 });
+        typed = true;
+      } catch {
+        await page.waitForTimeout(2000); // let hydration settle, then retry
+      }
+    }
+    if (!typed) { await dumpDebug(page, `noinput_${tag}`); throw new Error('pickup-input-not-found'); }
     await page.waitForTimeout(400);
     mark('typed-location');
     await page.waitForTimeout(2200);
@@ -234,10 +275,18 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
       }
     }
 
-    // 3) dates: open picker, click pickup then return day
+    // 3) dates: open the calendar (the trigger is a React handler that wants a
+    // native DOM click), retrying until .rdp-root actually appears.
     mark('awd-done -> dates');
-    const dp = page.locator('[data-testid="booking-widget-datepicker-input"]').first();
-    if (await dp.count().catch(() => 0)) { await dp.click().catch(() => {}); await page.waitForTimeout(1200); }
+    for (let i = 0; i < 4; i++) {
+      if (await page.locator('.rdp-root:visible').count().catch(() => 0)) break;
+      const dp = page.locator('[data-testid="booking-widget-datepicker-input"]:visible').first();
+      if (await dp.count().catch(() => 0)) {
+        await dp.evaluate((el) => el.click()).catch(() => {});
+        await dp.click({ timeout: 3000 }).catch(() => {});
+      }
+      await page.waitForTimeout(1300);
+    }
     mark('datepicker-open');
     if (!(await clickDay(page, pickup))) { await dumpDebug(page, `nopickday_${tag}`); throw new Error('pickup-day-not-clickable'); }
     await page.waitForTimeout(500);
@@ -264,6 +313,10 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     const status = resp.status();
     const body = await resp.text().catch(() => '');
     mark(`vehicles-response ${status}`);
+    if (debugDump) {
+      fs.mkdirSync(config.paths.debug, { recursive: true });
+      fs.writeFileSync(path.join(config.paths.debug, `vehicles_${tag}.json`), body);
+    }
 
     // PerimeterX block detection
     if (status === 403 || /"appId"\s*:\s*"PX|captcha\.px-cloud|blockScript/.test(body)) {
@@ -274,18 +327,22 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
       return { ok: false, error: `vehicles-http-${status}`, warnings, detail: location.name };
     }
 
-    const prices = parsePricesFromJson(body);
-    if (!prices.length) {
-      if (debugDump) { fs.mkdirSync(config.paths.debug, { recursive: true }); fs.writeFileSync(path.join(config.paths.debug, `vehicles_${tag}.json`), body); }
-      throw new Error('no-prices-in-json');
-    }
-    const priceUSD = Math.min(...prices);
+    const veh = parseVehicles(body);
+    if (!veh) throw new Error('no-prices-in-json');
+
+    // Booking/detail link: prefer the reservation page the SPA navigated to;
+    // else fall back to the AARP search entry so the alert is still actionable.
+    await page.waitForTimeout(1500);
+    let url = page.url();
+    if (!/reservation|vehicle|select/i.test(url)) url = 'https://www.avis.com/en/offers/partners/aarp-members-save-30';
+
     return {
       ok: true,
-      priceUSD,
-      carClass: 'lowest available',
+      priceUSD: veh.priceUSD,
+      allInUSD: veh.allInUSD,
+      carClass: `${veh.vehicle} (${veh.sipp}, ${veh.payType})`,
       currency: 'USD',
-      url: page.url(),
+      url,
       warnings,
       detail: `${location.name} · ${fmt(pickup)}..${fmt(ret)} · ${rentalDays}d${awdCode && !warnings.includes('awd-not-applied') ? ' · AARP' : ''}`,
     };
@@ -294,8 +351,8 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     return { ok: false, error: String(err.message || err), warnings, detail: location.name };
   } finally {
     if (attached) {
-      // Only close the tab we opened, then disconnect — leave your Chrome running.
-      await page.close().catch(() => {});
+      // Disconnect, leaving your Chrome running. Only close the tab if WE made it.
+      if (!reusedTab) await page.close().catch(() => {});
       await browser.close().catch(() => {});
     } else {
       await ctx.storageState({ path: statePath }).catch(() => {});

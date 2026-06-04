@@ -14,4 +14,4 @@ if not exist "%CHROME%" (
   pause
   exit /b 1
 )
-"%CHROME%" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\avis-chrome-profile" --no-first-run --no-default-browser-check https://www.avis.com/en/home
+"%CHROME%" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\avis-chrome-profile" --window-size=1500,950 --no-first-run --no-default-browser-check https://www.avis.com/en/home
