@@ -4,8 +4,10 @@ import cron from 'node-cron';
 import config from './config.js';
 import { createServer } from './server.js';
 import { runCheck, activeConfig } from './monitor.js';
+import { getNotifier } from './notifiers/index.js';
 
 const ONCE = process.argv.includes('--once');
+const REPORT = process.argv.includes('--report'); // also Telegram a run summary
 
 async function main() {
   const cfg = activeConfig();
@@ -16,6 +18,7 @@ async function main() {
   if (ONCE) {
     const r = await runCheck({});
     console.log(summarize(r));
+    if (REPORT) await sendReport(cfg, r);
     process.exit(0);
   }
 
@@ -32,7 +35,21 @@ async function main() {
 }
 
 function summarize(r) {
-  return `checked ${r.checked} locations · ${r.qualifying} under budget · ${r.alerted} new alert(s)`;
+  return `checked ${r.checked} locations · ${r.ok} priced · ${r.blocked} blocked · ${r.qualifying} under budget · ${r.alerted} new alert(s)`;
+}
+
+// One-off status to Telegram so you can confirm the outcome from your phone.
+async function sendReport(cfg, r) {
+  const best = r.results.filter((x) => x.ok).sort((a, b) => a.priceUSD - b.priceUSD)[0];
+  const verdict = r.blocked === r.checked
+    ? 'ALL locations were BLOCKED by Avis bot-detection (PerimeterX). A datacenter IP cannot read prices — this confirms the wall.'
+    : r.ok > 0
+      ? `Got real prices from ${r.ok}/${r.checked} locations. Best: $${best.priceUSD} at ${best.name}.`
+      : `No prices and not clearly blocked — ${r.checked} checked, see logs.`;
+  const msg =
+    `Checked ${r.checked} · priced ${r.ok} · blocked ${r.blocked} · under $${cfg.budgetUSD}: ${r.qualifying}\n\n${verdict}`;
+  const res = await getNotifier(cfg.notifier).send({ title: '🧪 Avis scrape test', message: msg });
+  console.log(res.ok ? 'report sent ✓' : `report failed: ${res.error}`);
 }
 
 main().catch((e) => {

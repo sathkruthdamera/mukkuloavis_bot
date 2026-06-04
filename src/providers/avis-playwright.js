@@ -131,6 +131,42 @@ async function readPrices(page) {
   return out;
 }
 
+// Pull plausible 30-day totals out of the vehicles API JSON. We don't have a
+// confirmed schema (only ever got the 403), so walk the object generically and
+// collect numbers under price-like keys, bounded to a sane 30-day-total range.
+function parsePricesFromJson(text) {
+  const out = [];
+  const KEY = /(total|amount|price|payNow|payLater|grandTotal|estimatedTotal|rate)/i;
+  try {
+    const data = JSON.parse(text);
+    const walk = (node, keyHint) => {
+      if (node == null) return;
+      if (typeof node === 'number') {
+        if (KEY.test(keyHint || '') && node >= 200 && node <= 20000) out.push(node);
+        return;
+      }
+      if (typeof node === 'string') {
+        const m = node.match(/^\$?\s?([\d,]+(?:\.\d{2})?)$/);
+        if (m && KEY.test(keyHint || '')) {
+          const v = Number(m[1].replace(/,/g, ''));
+          if (v >= 200 && v <= 20000) out.push(v);
+        }
+        return;
+      }
+      if (Array.isArray(node)) { node.forEach((v) => walk(v, keyHint)); return; }
+      if (typeof node === 'object') for (const [k, v] of Object.entries(node)) walk(v, k);
+    };
+    walk(data, '');
+  } catch {
+    // not JSON — fall back to scanning for "$" amounts in a total-ish range
+    for (const m of text.matchAll(/\$\s?([\d,]+(?:\.\d{2})?)/g)) {
+      const v = Number(m[1].replace(/,/g, ''));
+      if (v >= 200 && v <= 20000) out.push(v);
+    }
+  }
+  return out;
+}
+
 export async function getQuote({ location, pickup, ret, awdCode, rentalDays, debugDump = false }) {
   const { chromium } = await pw();
   fs.mkdirSync(config.paths.data, { recursive: true });
@@ -197,20 +233,38 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
     await page.keyboard.press('Escape').catch(() => {});
     mark('dates-done');
 
-    // 4) search
-    const submit = page.locator('[data-testid="booking-widget-search-button"]').first();
+    // 4) search — the button is a React handler that only fires on a native
+    // DOM click; it POSTs /web/reservation/vehicles which returns prices as JSON
+    // (or a 403 + PerimeterX challenge if we're flagged). Capture that response.
+    const submit = page.locator('[data-testid="booking-widget-search-button"]:visible').first();
     if (!(await submit.count().catch(() => 0))) throw new Error('search-button-not-found');
-    await jitter(page, 600, 1500);
-    await submit.click();
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForTimeout(3500);
+    await submit.scrollIntoViewIfNeeded().catch(() => {});
+    await jitter(page, 500, 1200);
+    const respP = page
+      .waitForResponse((r) => /\/web\/reservation\/vehicles/.test(r.url()), { timeout: 20000 })
+      .catch(() => null);
+    await submit.evaluate((el) => el.click()).catch(() => {});
+    mark('search-clicked');
+    const resp = await respP;
+    if (!resp) { await dumpDebug(page, `noresp_${tag}`); throw new Error('no-vehicles-response'); }
 
-    if (debugDump) await dumpDebug(page, `results_${tag}`);
+    const status = resp.status();
+    const body = await resp.text().catch(() => '');
+    mark(`vehicles-response ${status}`);
 
-    const prices = await readPrices(page);
+    // PerimeterX block detection
+    if (status === 403 || /"appId"\s*:\s*"PX|captcha\.px-cloud|blockScript/.test(body)) {
+      return { ok: false, blocked: true, error: 'blocked-perimeterx-403', warnings, detail: location.name };
+    }
+    if (status >= 400) {
+      await dumpDebug(page, `httperr_${tag}`);
+      return { ok: false, error: `vehicles-http-${status}`, warnings, detail: location.name };
+    }
+
+    const prices = parsePricesFromJson(body);
     if (!prices.length) {
-      await dumpDebug(page, `noprice_${tag}`);
-      throw new Error('no-prices-parsed');
+      if (debugDump) { fs.mkdirSync(config.paths.debug, { recursive: true }); fs.writeFileSync(path.join(config.paths.debug, `vehicles_${tag}.json`), body); }
+      throw new Error('no-prices-in-json');
     }
     const priceUSD = Math.min(...prices);
     return {

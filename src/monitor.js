@@ -29,6 +29,7 @@ export async function runCheck({ now = new Date() } = {}) {
   for (const [idx, location] of locations.entries()) {
     if (gap && idx > 0) await sleep(gap[0] + Math.random() * (gap[1] - gap[0]));
     let best = null;
+    let lastFail = null;
     for (const w of windows) {
       let q;
       try {
@@ -44,6 +45,8 @@ export async function runCheck({ now = new Date() } = {}) {
       }
       if (q.ok && (!best || q.priceUSD < best.priceUSD)) {
         best = { ...q, window: w.label, pickup: fmt(w.pickup), ret: fmt(w.ret) };
+      } else if (!q.ok) {
+        lastFail = q; // remember blocked/error so it surfaces in the result
       }
     }
     results.push({
@@ -51,7 +54,7 @@ export async function runCheck({ now = new Date() } = {}) {
       name: location.name,
       distance: location.distance,
       checkedAt: nowIso,
-      ...(best || { ok: false, error: 'no quote' }),
+      ...(best || lastFail || { ok: false, error: 'no quote' }),
       qualifies: !!(best && best.priceUSD <= cfg.budgetUSD),
     });
   }
@@ -88,5 +91,7 @@ export async function runCheck({ now = new Date() } = {}) {
   state.alerts = state.alerts.slice(0, 200);
   save(state);
 
-  return { lastRun: nowIso, checked: results.length, qualifying: qualifying.length, alerted: fresh.length, results };
+  const okCount = results.filter((r) => r.ok).length;
+  const blocked = results.filter((r) => r.blocked).length;
+  return { lastRun: nowIso, checked: results.length, ok: okCount, blocked, qualifying: qualifying.length, alerted: fresh.length, results };
 }
