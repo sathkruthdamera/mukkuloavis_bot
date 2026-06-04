@@ -79,12 +79,12 @@ export async function runCheck({ now = new Date() } = {}) {
   });
 
   for (const r of fresh) {
-    const allIn = r.allInUSD ? ` (all-in ~$${r.allInUSD})` : '';
+    const base = r.baseUSD ? ` (base $${r.baseUSD} pre-tax)` : '';
     const aarp = cfg.awdCode && !(r.warnings || []).includes('awd-not-applied') ? ' · AARP applied' : '';
-    const title = `🚗 Avis ${r.code} $${r.priceUSD} for ${cfg.rentalDays} days`;
+    const title = `🚗 Avis ${r.code} $${r.priceUSD} all-in for ${cfg.rentalDays} days`;
     const message =
       `${r.name} (${r.distance} mi from ${cfg.origin.name})\n` +
-      `$${r.priceUSD} base${allIn} — under your $${cfg.budgetUSD} budget${aarp}\n` +
+      `$${r.priceUSD} all-in incl. taxes & fees${base} — under your $${cfg.budgetUSD} budget${aarp}\n` +
       `Pickup ${r.pickup} → return ${r.ret}\n` +
       `${r.carClass}`;
     const res = await notifier.send({ title, message, url: r.url });

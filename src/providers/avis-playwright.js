@@ -142,13 +142,16 @@ function parseVehicles(text) {
   let best = null;
   for (const v of vehicles) {
     for (const p of v.price || []) {
-      const base = num(p.grossSubtotal) ?? num(p.netSubtotal) ?? num(p.total) ?? num(p.totalDiscounted);
-      if (base == null || base < 100 || base > 50000) continue;
+      // All-in total = what you actually pay, taxes & fees included. Budget is
+      // compared against THIS. Fall back to base only if all-in is missing.
+      const base = num(p.grossSubtotal) ?? num(p.netSubtotal);
       const allIn = num(p.totalDiscounted) ?? num(p.total) ?? base;
-      if (!best || base < best.priceUSD) {
+      if (allIn == null || allIn < 100 || allIn > 50000) continue;
+      if (!best || allIn < best.priceUSD) {
         best = {
-          priceUSD: Math.round(base),
+          priceUSD: Math.round(allIn), // all-in (taxes + fees) — the budget figure
           allInUSD: Math.round(allIn),
+          baseUSD: base != null ? Math.round(base) : null,
           vehicle: v.description || v.makeName || v.vehicleCode || 'vehicle',
           sipp: v.sippCode || '',
           payType: /PAY_NOW/i.test(p.priceType || '') ? 'pay now' : 'pay later',
@@ -327,8 +330,9 @@ export async function getQuote({ location, pickup, ret, awdCode, rentalDays, deb
 
     return {
       ok: true,
-      priceUSD: veh.priceUSD,
+      priceUSD: veh.priceUSD, // all-in total (taxes + fees)
       allInUSD: veh.allInUSD,
+      baseUSD: veh.baseUSD,
       carClass: `${veh.vehicle} (${veh.sipp}, ${veh.payType})`,
       currency: 'USD',
       url,

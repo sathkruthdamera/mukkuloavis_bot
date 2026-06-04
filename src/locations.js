@@ -18,6 +18,13 @@ export const LOCATIONS = [
   { code: 'SPS', name: 'Wichita Falls, TX (SPS)',          query: 'Wichita Falls, TX', lat: 33.9137, lon: -98.4934 },
   { code: 'TPL', name: 'Temple, TX',                       query: 'Temple, TX',        lat: 31.0982, lon: -97.3428 },
   { code: 'GRK', name: 'Killeen, TX (GRK)',                query: 'Killeen Airport',   lat: 31.0853, lon: -97.6861 },
+  // Oklahoma corridor (Dallas → Tulsa)
+  { code: 'DUA', name: 'Durant, OK',                       query: 'Durant, OK',        lat: 33.9937, lon: -96.3970 },
+  { code: 'ADM', name: 'Ardmore, OK',                      query: 'Ardmore, OK',       lat: 34.1743, lon: -97.1436 },
+  { code: 'MLC', name: 'McAlester, OK',                    query: 'McAlester, OK',     lat: 34.9334, lon: -95.7697 },
+  { code: 'OKC', name: 'Oklahoma City (OKC)',              query: 'Oklahoma City Airport', lat: 35.3931, lon: -97.6007 },
+  { code: 'MKO', name: 'Muskogee, OK',                     query: 'Muskogee, OK',      lat: 35.7479, lon: -95.3697 },
+  { code: 'TUL', name: 'Tulsa Intl Airport (TUL)',         query: 'Tulsa Airport',     lat: 36.1984, lon: -95.8881 },
 ];
 
 // Great-circle distance in miles.

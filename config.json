@@ -5,7 +5,7 @@
   "awdLabel": "AARP",
   "currency": "USD",
   "origin": { "name": "Dallas, TX", "lat": 32.7767, "lon": -96.797 },
-  "radiusMiles": 150,
+  "radiusMiles": 250,
   "startDateStrategy": { "leadDaysMin": 3, "candidates": 2, "stepDays": 7 },
   "checkIntervalCron": "0 * * * *",
   "provider": "mock",
