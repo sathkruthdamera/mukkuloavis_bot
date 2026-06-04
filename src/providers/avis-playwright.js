@@ -90,33 +90,22 @@ async function clickDay(page, date) {
   return false;
 }
 
+// Apply the AARP AWD code via the discount popup (confirmed selectors).
 async function applyAwd(page, awd) {
-  const trig = page.locator('[data-testid="discount-coupon-popup-trigger-button"]').first();
+  const trig = page.locator('[data-testid="discount-coupon-popup-trigger-button"]:visible').first();
   if (!(await trig.count().catch(() => 0))) return false;
-  await trig.click().catch(() => {});
+  await trig.evaluate((el) => el.click()).catch(() => {}); // React handler wants a native click
   await page.waitForTimeout(1200);
-  const cands = [
-    'input[name*="awd" i]',
-    'input[aria-label*="AWD" i]',
-    'input[placeholder*="AWD" i]',
-    'input[aria-label*="discount" i]',
-    'input[placeholder*="code" i]',
-    '[role="dialog"] input[type="text"]',
-    '.MuiPopover-root input[type="text"]',
-    '.MuiPaper-root input[type="text"]',
-  ];
-  for (const sel of cands) {
-    const el = page.locator(sel).first();
-    if ((await el.count().catch(() => 0)) && (await el.isVisible().catch(() => false))) {
-      await el.fill(awd).catch(() => {});
-      const apply = page.locator('button:has-text("Apply"), [data-testid*="apply" i]').first();
-      if (await apply.count().catch(() => 0)) await apply.click().catch(() => {});
-      else await el.press('Enter').catch(() => {});
-      await page.waitForTimeout(600);
-      return true;
-    }
-  }
-  return false;
+  const input = page.locator('[data-testid="bookingWidgetDiscountPopupawdCodeInput"]').first();
+  if (!(await input.count().catch(() => 0))) return false;
+  await input.fill(awd).catch(() => {});
+  await page.waitForTimeout(300);
+  // The popup's submit button (labelled "Close") applies the code + closes.
+  const submit = page.locator('[data-testid="bookingWidgetDiscountPopupSubmitButton"]').first();
+  if (await submit.count().catch(() => 0)) await submit.evaluate((el) => el.click()).catch(() => {});
+  else await input.press('Enter').catch(() => {});
+  await page.waitForTimeout(800);
+  return true;
 }
 
 async function readPrices(page) {
