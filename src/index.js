@@ -5,15 +5,22 @@ import config from './config.js';
 import { createServer } from './server.js';
 import { runCheck, activeConfig } from './monitor.js';
 import { getNotifier } from './notifiers/index.js';
+import { sendDigest } from './digest.js';
 
 const ONCE = process.argv.includes('--once');
 const REPORT = process.argv.includes('--report'); // also Telegram a run summary
+const DIGEST = process.argv.includes('--digest'); // send the daily digest and exit
 
 async function main() {
   const cfg = activeConfig();
   console.log(`Avis Watcher — provider=${cfg.provider} notifier=${cfg.notifier}`);
   console.log(`Budget $${cfg.budgetUSD} for ${cfg.rentalDays} days within ${cfg.radiusMiles} mi of ${cfg.origin.name}`);
   if (!cfg.awdCode) console.warn('⚠️  No AWD code set — AARP discount will NOT be applied. Set AWD_CODE in .env.');
+
+  if (DIGEST) {
+    console.log('digest:', JSON.stringify(await sendDigest()));
+    process.exit(0);
+  }
 
   if (ONCE) {
     const r = await runCheck({});
@@ -31,6 +38,13 @@ async function main() {
     runCheck({})
       .then((r) => console.log(`[${new Date().toISOString()}] ${summarize(r)}`))
       .catch((e) => console.error('check failed:', e));
+  });
+
+  // Daily digest of the lowest prices found.
+  cron.schedule(cfg.digestCron || '0 21 * * *', () => {
+    sendDigest()
+      .then((r) => console.log(`[${new Date().toISOString()}] digest ${JSON.stringify(r)}`))
+      .catch((e) => console.error('digest failed:', e));
   });
 }
 

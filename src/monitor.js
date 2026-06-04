@@ -75,6 +75,21 @@ export async function runCheck({ now = new Date() } = {}) {
     results.filter((r) => r.ok).map((r) => ({ t: nowIso, code: r.code, price: r.priceUSD, pickup: r.pickup }))
   );
 
+  // Track today's lowest all-in price per location for the daily digest.
+  const today = nowIso.slice(0, 10);
+  if (!state.dailyLows || state.dailyLows.date !== today) state.dailyLows = { date: today, byCode: {} };
+  for (const r of results) {
+    if (!r.ok) continue;
+    const prev = state.dailyLows.byCode[r.code];
+    if (!prev || r.priceUSD < prev.priceUSD) {
+      state.dailyLows.byCode[r.code] = {
+        priceUSD: r.priceUSD, allInUSD: r.allInUSD, baseUSD: r.baseUSD,
+        name: r.name, distance: r.distance, carClass: r.carClass,
+        url: r.url, pickup: r.pickup, ret: r.ret, t: nowIso,
+      };
+    }
+  }
+
   // Alert on qualifying deals, deduped by location+pickup within cooldown.
   const qualifying = results.filter((r) => r.qualifies).sort((a, b) => a.priceUSD - b.priceUSD);
   const notifier = getNotifier(cfg.notifier);

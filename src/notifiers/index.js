@@ -13,11 +13,13 @@ const telegram = {
   async send({ title, message, url }) {
     const { token, chatId } = config.secrets.telegram;
     if (!token || !chatId) return { ok: false, error: 'TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set' };
-    const text = `*${escapeMd(title)}*\n${escapeMd(message)}${url ? `\n${url}` : ''}`;
+    // HTML mode is forgiving (only &<> need escaping); Telegram auto-links URLs.
+    const esc = (s = '') => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const text = `<b>${esc(title)}</b>\n${esc(message)}${url ? `\n${esc(url)}` : ''}`;
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'MarkdownV2', disable_web_page_preview: false }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: false }),
     });
     if (!res.ok) return { ok: false, error: `telegram ${res.status}: ${await res.text().catch(() => '')}` };
     return { ok: true };
@@ -65,8 +67,4 @@ const NOTIFIERS = { console: console_, telegram, pushover, imessage };
 
 export function getNotifier(name) {
   return NOTIFIERS[name] || console_;
-}
-
-function escapeMd(s = '') {
-  return String(s).replace(/[_*\[\]()~`>#+\-=|{}.!\\]/g, (c) => '\\' + c);
 }

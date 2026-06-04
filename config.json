@@ -9,6 +9,7 @@
   "locationTiers": { "nearCount": 8, "farEveryHours": 4 },
   "startDateStrategy": { "leadDaysMin": 3, "candidates": 2, "stepDays": 7 },
   "checkIntervalCron": "0 * * * *",
+  "digestCron": "0 21 * * *",
   "provider": "mock",
   "playwright": { "headless": true, "navTimeoutMs": 45000, "proxyUrl": "", "jitterBetweenLocationsMs": [4000, 12000] },
   "notifier": "telegram",
