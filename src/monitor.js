@@ -16,7 +16,14 @@ export function activeConfig() {
 export async function runCheck({ now = new Date() } = {}) {
   const cfg = activeConfig();
   const provider = getProvider(cfg.provider);
-  const locations = locationsWithinRadius(cfg.origin, cfg.radiusMiles);
+
+  // Tiered coverage: check the N closest locations every run, and the farther
+  // ones only every `farEveryHours` hours — keeps the hourly sweep gentle.
+  const all = locationsWithinRadius(cfg.origin, cfg.radiusMiles);
+  const tiers = cfg.locationTiers || { nearCount: 8, farEveryHours: 4 };
+  const checkFar = now.getHours() % (tiers.farEveryHours || 4) === 0;
+  const locations = checkFar ? all : all.slice(0, tiers.nearCount || 8);
+
   const windows = candidateWindows(cfg.startDateStrategy, cfg.rentalDays, now);
   const nowIso = now.toISOString();
 
@@ -96,5 +103,5 @@ export async function runCheck({ now = new Date() } = {}) {
 
   const okCount = results.filter((r) => r.ok).length;
   const blocked = results.filter((r) => r.blocked).length;
-  return { lastRun: nowIso, checked: results.length, ok: okCount, blocked, qualifying: qualifying.length, alerted: fresh.length, results };
+  return { lastRun: nowIso, tier: checkFar ? 'all+far' : 'near-only', checked: results.length, ok: okCount, blocked, qualifying: qualifying.length, alerted: fresh.length, results };
 }

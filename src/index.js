@@ -35,7 +35,7 @@ async function main() {
 }
 
 function summarize(r) {
-  return `checked ${r.checked} locations · ${r.ok} priced · ${r.blocked} blocked · ${r.qualifying} under budget · ${r.alerted} new alert(s)`;
+  return `[${r.tier}] checked ${r.checked} locations · ${r.ok} priced · ${r.blocked} blocked · ${r.qualifying} under budget · ${r.alerted} new alert(s)`;
 }
 
 // One-off status to Telegram so you can confirm the outcome from your phone.
